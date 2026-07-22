@@ -1,0 +1,95 @@
+name: Yazar Modu APK Oluştur
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: yazar-modu-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk-olustur:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Depoyu al
+        uses: actions/checkout@v6
+
+      - name: Java 17 kur
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Flutter 3.44.6 kur
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.6"
+          channel: stable
+          cache: true
+
+      - name: Kaynak ZIP dosyasını kontrol et
+        shell: bash
+        run: |
+          test -f yazar_modu_kaynak.zip || {
+            echo "yazar_modu_kaynak.zip bulunamadı. Dosyayı deponun ana sayfasına yükleyin."
+            exit 1
+          }
+
+      - name: Temiz Android projesi oluştur
+        run: |
+          flutter create \
+            --platforms=android \
+            --org com.altayaytin \
+            --project-name yazar_modu_kitap_editoru \
+            uygulama
+
+      - name: Yazar Modu kaynaklarını yerleştir
+        shell: bash
+        run: |
+          mkdir -p kaynak
+          unzip -q yazar_modu_kaynak.zip -d kaynak
+          cp -a kaynak/. uygulama/
+          sed -i 's/android:label="yazar_modu_kitap_editoru"/android:label="Yazar Modu"/' \
+            uygulama/android/app/src/main/AndroidManifest.xml
+
+      - name: Paketleri indir
+        working-directory: uygulama
+        run: flutter pub get
+
+      - name: Kod kontrolü
+        working-directory: uygulama
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Testleri çalıştır
+        working-directory: uygulama
+        run: flutter test
+
+      - name: APK oluştur
+        working-directory: uygulama
+        run: flutter build apk --release
+
+      - name: APK dosyasını hazırla
+        shell: bash
+        run: |
+          mkdir -p cikti
+          cp uygulama/build/app/outputs/flutter-apk/app-release.apk \
+            cikti/Yazar-Modu-v0.1.1.apk
+
+      - name: APK dosyasını GitHub'a yükle
+        uses: actions/upload-artifact@v6
+        with:
+          name: Yazar-Modu-Android-APK
+          path: cikti/Yazar-Modu-v0.1.1.apk
+          if-no-files-found: error
+          retention-days: 30
